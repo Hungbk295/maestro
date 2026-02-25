@@ -5,6 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 
@@ -13,7 +14,7 @@ import { ActivityFeed } from "@/components/session/ActivityFeed";
 import { isGitWorktree } from "@/lib/git";
 import { useSessionBranch } from "@/hooks/useSessionBranch";
 import { buildFontFamily, waitForFont } from "@/lib/fonts";
-import { getBackendInfo, killSession, onPtyOutput, resizePty, signalTerminalReady, writeStdin, type BackendInfo } from "@/lib/terminal";
+import { getBackendInfo, killSession, onPtyOutput, resizePty, savePastedImage, signalTerminalReady, writeStdin, type BackendInfo } from "@/lib/terminal";
 import { DEFAULT_THEME, LIGHT_THEME, toXtermTheme } from "@/lib/terminalTheme";
 import { useMcpStore } from "@/stores/useMcpStore";
 import { type AiMode, type BackendSessionStatus, useSessionStore } from "@/stores/useSessionStore";
@@ -330,6 +331,8 @@ export const TerminalView = memo(function TerminalView({
     let dataDisposable: { dispose: () => void } | null = null;
     let resizeDisposable: { dispose: () => void } | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let pasteHandler: ((e: Event) => void) | null = null;
+    let unlistenDragDrop: (() => void) | null = null;
 
     // Wait for font to load before initializing terminal
     const initTerminal = async () => {
@@ -404,6 +407,74 @@ export const TerminalView = memo(function TerminalView({
 
       textarea.addEventListener("compositionend", (e) => {
         pendingCompositionData = (e as CompositionEvent).data;
+      });
+
+      // Intercept paste events to handle images from the clipboard.
+      // xterm.js only pastes text; images are silently dropped. We detect image
+      // data, save it to a temp file via the backend, and write the file path
+      // into the terminal so the AI CLI can read it.
+      pasteHandler = (e: Event) => {
+        const clipboardEvent = e as ClipboardEvent;
+        const items = clipboardEvent.clipboardData?.items;
+        if (!items) return;
+
+        let imageItem: DataTransferItem | null = null;
+        for (const item of Array.from(items)) {
+          if (item.type.startsWith("image/")) {
+            imageItem = item;
+            break;
+          }
+        }
+
+        if (!imageItem) return; // No image — let xterm handle text paste
+
+        // Block xterm.js from processing this paste event
+        e.preventDefault();
+        e.stopPropagation();
+
+        const blob = imageItem.getAsFile();
+        if (!blob) return;
+
+        const mediaType = imageItem.type;
+        const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50 MB
+        // Save image async, then write the path to stdin
+        blob.arrayBuffer().then(async (arrayBuffer) => {
+          if (arrayBuffer.byteLength > MAX_IMAGE_SIZE) {
+            console.error("[TerminalView] Image too large to paste");
+            return;
+          }
+          const bytes = Array.from(new Uint8Array(arrayBuffer));
+          const filePath = await savePastedImage(bytes, mediaType);
+          await writeStdin(sessionId, filePath);
+        }).catch((err) => {
+          console.error("[TerminalView] Failed to paste image:", err);
+        });
+      };
+      container.addEventListener("paste", pasteHandler, { capture: true });
+
+      // Drag-and-drop support for images via Tauri's native file-drop API.
+      // Tauri intercepts drag-and-drop at the webview level (JS drop events
+      // never fire), so we listen for its onDragDropEvent instead. This also
+      // gives us file paths directly — no need to read file data into JS.
+      const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
+      getCurrentWebviewWindow().onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          const imagePaths = event.payload.paths.filter((p) => {
+            const ext = p.split(".").pop()?.toLowerCase() ?? "";
+            return IMAGE_EXTENSIONS.has(ext);
+          });
+          for (const filePath of imagePaths) {
+            writeStdin(sessionId, filePath).catch((err) => {
+              console.error("[TerminalView] Failed to drop image:", err);
+            });
+          }
+        }
+      }).then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenDragDrop = unlisten;
+        }
       });
 
       dataDisposable = term.onData((data) => {
@@ -586,6 +657,8 @@ export const TerminalView = memo(function TerminalView({
       }
       writeBuffer = [];
       resizeObserver?.disconnect();
+      if (pasteHandler) container.removeEventListener("paste", pasteHandler, { capture: true });
+      if (unlistenDragDrop) unlistenDragDrop();
       dataDisposable?.dispose();
       resizeDisposable?.dispose();
       if (unlisten) unlisten();
