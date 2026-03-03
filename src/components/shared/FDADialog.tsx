@@ -39,7 +39,7 @@ export function FDADialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative mx-4 w-full max-w-md rounded-lg border border-maestro-border bg-maestro-card p-6 shadow-xl">
+      <div className="glass-panel relative mx-4 w-full max-w-md rounded-lg p-6">
         {/* Close button */}
         <button
           type="button"

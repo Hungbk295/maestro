@@ -71,8 +71,7 @@ interface SidebarProps {
 }
 
 /* ── Shared card class ── */
-const cardClass =
-  "sidebar-card-link rounded-lg border border-maestro-border/60 bg-maestro-card p-3 overflow-hidden shadow-[0_1px_4px_rgb(0_0_0/0.15),0_0_0_1px_rgb(255_255_255/0.03)_inset] transition-shadow hover:shadow-[0_2px_8px_rgb(0_0_0/0.25),0_0_0_1px_rgb(255_255_255/0.05)_inset]";
+const cardClass = "sidebar-card-link sidebar-card";
 
 const divider = <div className="h-px bg-maestro-border/30 my-1" />;
 
@@ -206,7 +205,7 @@ export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme 
     // Use a class-based width to avoid inline styles (CSP-friendly).
     <aside
       style={sidebarStyle}
-      className={`theme-transition no-select relative flex h-full shrink-0 flex-col border-r border-maestro-border bg-maestro-surface ${
+      className={`theme-transition no-select relative flex h-full shrink-0 flex-col border-r border-maestro-border/60 sidebar-surface ${
         isDragging ? "" : "transition-all duration-200 ease-out"
       }`}
     >
@@ -214,7 +213,7 @@ export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme 
       <button
         type="button"
         onClick={() => (collapsed ? onExpand?.() : onCollapse?.())}
-        className="absolute -right-3 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-maestro-border bg-maestro-surface text-maestro-muted shadow-sm transition-colors hover:bg-maestro-card hover:text-maestro-text"
+        className="absolute -right-3 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-maestro-muted transition-colors hover:text-maestro-text sidebar-card"
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
         {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}

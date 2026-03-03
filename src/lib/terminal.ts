@@ -181,7 +181,7 @@ export async function hasEnhancedState(): Promise<boolean> {
 declare global {
   interface Window {
     __maestroTerminalsReady?: Set<number>;
-    __maestroPendingReady?: Map<number, { resolve: () => void; timer: ReturnType<typeof setTimeout> }>;
+    __maestroPendingReady?: Map<number, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }>;
   }
 }
 
@@ -192,7 +192,7 @@ function getTerminalsReadySet(): Set<number> {
   return window.__maestroTerminalsReady;
 }
 
-function getPendingReadyMap(): Map<number, { resolve: () => void; timer: ReturnType<typeof setTimeout> }> {
+function getPendingReadyMap(): Map<number, { resolve: () => void; reject: (err: Error) => void; timer: ReturnType<typeof setTimeout> }> {
   if (!window.__maestroPendingReady) {
     window.__maestroPendingReady = new Map();
   }
@@ -218,6 +218,12 @@ export function signalTerminalReady(sessionId: number): void {
 /**
  * Cleans up terminal ready state for a session.
  * Call when a terminal is killed/unmounted to prevent stale entries.
+ *
+ * IMPORTANT: Rejects the pending promise (if any) so that waitForTerminalReady
+ * does not hang forever. This is critical for React StrictMode, which runs
+ * effect cleanup synchronously between the first and second mount — if cleanup
+ * only cleared the timeout without rejecting, the promise would hang indefinitely
+ * and the CLI launch command would never be sent.
  */
 export function cleanupTerminalReady(sessionId: number): void {
   getTerminalsReadySet().delete(sessionId);
@@ -226,6 +232,7 @@ export function cleanupTerminalReady(sessionId: number): void {
   if (pending) {
     clearTimeout(pending.timer);
     pendingReady.delete(sessionId);
+    pending.reject(new Error(`Terminal ${sessionId} unmounted before ready`));
   }
 }
 
@@ -275,7 +282,7 @@ export function waitForTerminalReady(sessionId: number, timeoutMs = 5000): Promi
       reject(new Error(`Terminal ${sessionId} ready timeout after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    pendingReady.set(sessionId, { resolve, timer });
+    pendingReady.set(sessionId, { resolve, reject, timer });
   });
 }
 
