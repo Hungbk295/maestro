@@ -90,6 +90,21 @@ The composition event handlers (`compositionstart`/`compositionend`) are retaine
 ### 4. Overriding `_isSendingComposition` via Object.defineProperty
 - **Why it failed**: The public `Terminal` is a wrapper; `_compositionHelper` lives on `_core`, not the public instance.
 
+## Why the fix was unstable (Claude Code vs Codex CLI)
+
+Claude Code (Bun binary) frequently queries the terminal for cursor position (`\x1b[6n`)
+while rendering its TUI prompt. xterm.js answers these queries by firing `onData` with the
+response (e.g. `\x1b[24;10R`). Because `onData` is also used for user keystrokes, the
+cursor-position response was hitting the `else` branch of the IME state machine and
+resetting `imeActive = false` before the browser `input` event had a chance to fire.
+
+Codex CLI (Rust binary with `stdio: "inherit"`) rarely queries cursor position during
+typing, so the race never occurred.
+
+**Fix**: treat any `data` starting with ESC (`0x1b`) as a terminal response sequence and
+skip it in the IME state machine — let it pass through to the PTY without touching
+`imeActive`, `imeDelCount`, or `imeReplacementSent`.
+
 ## Edge Cases & Future Enhancement Ideas
 
 ### Known limitations

@@ -597,10 +597,19 @@ export const TerminalView = memo(function TerminalView({
         // is often incomplete (missing consonants after the replaced vowel).
         const charCode = data.length === 1 ? data.charCodeAt(0) : -1;
         const isDel = charCode === 0x7f || charCode === 0x08;
+        // Escape sequences are terminal responses to process queries (e.g. cursor
+        // position reports \x1b[row;colR sent by xterm.js in reply to \x1b[6n).
+        // They must not reset IME state — doing so causes a race condition where
+        // Claude Code's frequent cursor-position queries arrive between the IME's
+        // DEL+replacement onData events and the browser input event, breaking the
+        // inline-replacement tracking and dropping final consonants ("viết" → "viế").
+        const isEscape = data.charCodeAt(0) === 0x1b;
         if (isDel) {
           imeDelCount++;
           imeActive = true;
           imeReplacementSent = "";
+        } else if (isEscape) {
+          // Terminal response sequence — pass through without touching IME state
         } else if (imeActive && data.length > 0 && imeReplacementSent === "") {
           // First non-DEL text after DEL sequence = the replacement sent by IME
           imeReplacementSent = data;
