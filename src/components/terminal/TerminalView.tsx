@@ -13,10 +13,11 @@ import { QuickActionsManager } from "@/components/quickactions/QuickActionsManag
 import { ActivityFeed } from "@/components/session/ActivityFeed";
 import { isGitWorktree } from "@/lib/git";
 import { useSessionBranch } from "@/hooks/useSessionBranch";
-import { buildFontFamily, waitForFont } from "@/lib/fonts";
-import { getBackendInfo, killSession, onPtyOutput, resizePty, savePastedImage, signalTerminalReady, writeStdin, type BackendInfo } from "@/lib/terminal";
+import { buildFontFamily } from "@/lib/fonts";
+import { cleanupTerminalReady, getBackendInfo, killSession, onPtyOutput, registerTerminalFocusCallback, resizePty, savePastedImage, signalTerminalReady, writeStdin, type BackendInfo } from "@/lib/terminal";
 import { DEFAULT_THEME, LIGHT_THEME, toXtermTheme } from "@/lib/terminalTheme";
 import { useMcpStore } from "@/stores/useMcpStore";
+import { useCloseConfirmStore } from "@/stores/useCloseConfirmStore";
 import { type AiMode, type BackendSessionStatus, useSessionStore } from "@/stores/useSessionStore";
 import { useTerminalSettingsStore } from "@/stores/useTerminalSettingsStore";
 import { useShallow } from "zustand/react/shallow";
@@ -81,22 +82,22 @@ function mapStatus(status: BackendSessionStatus): SessionStatus {
 }
 
 /** Map session status to CSS class for border/glow */
-function cellStatusClass(status: SessionStatus): string {
-  switch (status) {
-    case "starting":
-      return "terminal-cell-starting";
-    case "working":
-      return "terminal-cell-working";
-    case "needs-input":
-      return "terminal-cell-needs-input";
-    case "done":
-      return "terminal-cell-done";
-    case "error":
-      return "terminal-cell-error";
-    default:
-      return "terminal-cell-idle";
-  }
-}
+// function cellStatusClass(status: SessionStatus): string {
+//   switch (status) {
+//     case "starting":
+//       return "terminal-cell-starting";
+//     case "working":
+//       return "terminal-cell-working";
+//     case "needs-input":
+//       return "terminal-cell-needs-input";
+//     case "done":
+//       return "terminal-cell-done";
+//     case "error":
+//       return "terminal-cell-error";
+//     default:
+//       return "terminal-cell-idle";
+//   }
+// }
 
 /**
  * Renders a single xterm.js terminal bound to a backend PTY session.
@@ -247,7 +248,12 @@ export const TerminalView = memo(function TerminalView({
    * then kills the backend session in the background.
    */
   const handleKill = useCallback(
-    (id: number) => {
+    async (id: number) => {
+      const confirmed = await useCloseConfirmStore.getState().confirm(
+        "Close session?",
+        "You have a running process in this pane.",
+      );
+      if (!confirmed) return;
       // Update UI immediately (optimistic)
       onKill(id);
       // Kill session in background - don't await
@@ -281,6 +287,7 @@ export const TerminalView = memo(function TerminalView({
     let term: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
     let unlisten: (() => void) | null = null;
+    let unregisterFocus: (() => void) | null = null;
     // === PTY Output Batching (reduces xterm.js render overhead) ===
     let writeBuffer: string[] = [];
     let rafId: number | null = null;
@@ -333,11 +340,12 @@ export const TerminalView = memo(function TerminalView({
     let resizeObserver: ResizeObserver | null = null;
     let pasteHandler: ((e: Event) => void) | null = null;
     let unlistenDragDrop: (() => void) | null = null;
+    let compositionCleanup: (() => void) | null = null;
 
-    // Wait for font to load before initializing terminal
+    // Initialize terminal — font is preloaded at app startup (see App.tsx),
+    // so no blocking wait needed. xterm.js uses CSS font-family fallbacks
+    // and re-renders when the font becomes available.
     const initTerminal = async () => {
-      await waitForFont(fontFamily, 2000);
-
       if (disposed) return;
 
       const initialTheme = document.documentElement.getAttribute("data-theme") === "light" ? LIGHT_THEME : DEFAULT_THEME;
@@ -387,6 +395,7 @@ export const TerminalView = memo(function TerminalView({
 
       termRef.current = term;
       fitAddonRef.current = fitAddon;
+      unregisterFocus = registerTerminalFocusCallback(sessionId, () => term?.focus());
 
       requestAnimationFrame(() => {
         try {
@@ -396,18 +405,117 @@ export const TerminalView = memo(function TerminalView({
         }
       });
 
-      // Workaround for xterm.js CompositionHelper bug on WebKit (Tauri/WKWebView):
-      // The hidden textarea accumulates text across compositions, but CompositionHelper
-      // uses textarea.value.length at compositionstart as the extraction offset. When
-      // prior text remains in the textarea, it extracts the wrong substring — e.g.
-      // sending "測試" instead of "這是". We capture the correct text from the
-      // compositionend event and replace whatever xterm sends via onData.
+      // ── IME Composition Fix — gonhanh-inspired full bypass ──────────────────
+      //
+      // Inspired by gonhanh.org's Vietnamese IME engine which never uses
+      // browser composition events, we completely bypass xterm.js's
+      // CompositionHelper by intercepting ALL composition events and ALL
+      // keyCode 229 keydowns. xterm.js only handles normal keystrokes;
+      // everything IME-related goes through our code.
+      //
+      // This eliminates the root cause: xterm.js's _isSendingComposition
+      // flag + setTimeout(0) race that drops keyCode 229 keystrokes after
+      // compositionend (e.g. "tại" → "tạ").
+      //
       const textarea = term.textarea!;
-      let pendingCompositionData: string | null = null;
+      let isComposing = false;
 
-      textarea.addEventListener("compositionend", (e) => {
-        pendingCompositionData = (e as CompositionEvent).data;
-      });
+      // ── IME inline-replacement fix (macOS Vietnamese Telex) ──────────
+      //
+      // macOS Vietnamese IME does NOT use composition events or keyCode 229.
+      // Instead it sends backspaces + replacement text through keyboard events.
+      // Problem: when replacing a vowel that has consonants after it (e.g.
+      // "êt" → "ết"), the IME sends DEL DEL + "ế" via keyboard (missing "t"),
+      // but the textarea/input event correctly has "ết".
+      //
+      // Fix: track DEL+replacement patterns in onData. When an input event
+      // shows the IME intended more text than what was sent, send the
+      // missing characters.
+      //
+      let imeDelCount = 0;
+      let imeReplacementSent = "";
+      let imeActive = false;
+
+      // Block compositionstart from xterm.js — prevent CompositionHelper
+      // from activating at all (for IMEs that DO use composition events).
+      const onCompositionStart = (e: Event) => {
+        e.stopImmediatePropagation();
+        isComposing = true;
+      };
+
+      // Block compositionupdate from xterm.js — prevent composition overlay.
+      const onCompositionUpdate = (e: Event) => {
+        e.stopImmediatePropagation();
+      };
+
+      // Block compositionend from xterm.js — prevent _finalizeComposition.
+      // Send the composed text directly to PTY ourselves.
+      const onCompositionEnd = (e: Event) => {
+        e.stopImmediatePropagation();
+        isComposing = false;
+        const data = (e as CompositionEvent).data;
+        if (data && data.length > 0) {
+          writeStdin(sessionId, data).catch(console.error);
+        }
+        textarea.value = "";
+      };
+
+      // Detect when the IME's input event has more text than what was
+      // sent through onData (the DEL+replacement keyboard path), and
+      // send the missing characters to the PTY.
+      const onInput = (e: Event) => {
+        const inputEvent = e as InputEvent;
+        if (isComposing || inputEvent.inputType === "insertCompositionText") {
+          e.stopImmediatePropagation();
+          return;
+        }
+
+        // Check for IME replacement discrepancy
+        if (imeActive && inputEvent.inputType === "insertText" && inputEvent.data) {
+          const expected = inputEvent.data;
+          const sent = imeReplacementSent;
+          if (sent && expected.length > sent.length && expected.startsWith(sent)) {
+            const missing = expected.slice(sent.length);
+            console.log(`[IME] fix: sent="${sent}" expected="${expected}" missing="${missing}"`);
+            writeStdin(sessionId, missing).catch(console.error);
+          } else if (!sent && expected.length > 0) {
+            // DELs sent but no replacement via keyboard — send full text
+            console.log(`[IME] fix: no replacement sent, sending full="${expected}"`);
+            writeStdin(sessionId, expected).catch(console.error);
+          }
+          imeActive = false;
+          imeDelCount = 0;
+          imeReplacementSent = "";
+        }
+      };
+
+      // WebKit may not fire compositionend on blur (WebKit #164369).
+      // Flush any pending composition text before it's lost.
+      const onBlur = () => {
+        if (isComposing) {
+          isComposing = false;
+          const data = textarea.value;
+          if (data.length > 0) {
+            writeStdin(sessionId, data).catch(console.error);
+          }
+          textarea.value = "";
+        }
+      };
+
+      // Composition listeners in capture phase — fire before xterm.js's bubble-phase.
+      textarea.addEventListener("compositionstart", onCompositionStart, { capture: true });
+      textarea.addEventListener("compositionupdate", onCompositionUpdate, { capture: true });
+      textarea.addEventListener("compositionend", onCompositionEnd, { capture: true });
+      textarea.addEventListener("input", onInput, { capture: true });
+      textarea.addEventListener("blur", onBlur);
+
+      compositionCleanup = () => {
+        textarea.removeEventListener("compositionstart", onCompositionStart, { capture: true });
+        textarea.removeEventListener("compositionupdate", onCompositionUpdate, { capture: true });
+        textarea.removeEventListener("compositionend", onCompositionEnd, { capture: true });
+        textarea.removeEventListener("input", onInput, { capture: true });
+        textarea.removeEventListener("blur", onBlur);
+      };
 
       // Intercept paste events to handle images from the clipboard.
       // xterm.js only pastes text; images are silently dropped. We detect image
@@ -478,16 +586,31 @@ export const TerminalView = memo(function TerminalView({
       });
 
       dataDisposable = term.onData((data) => {
-        if (pendingCompositionData !== null) {
-          const correctData = pendingCompositionData;
-          pendingCompositionData = null;
-          // Clear textarea to prevent accumulation that corrupts future compositions
-          textarea.value = "";
-          if (correctData.length > 0) {
-            writeStdin(sessionId, correctData).catch(console.error);
-          }
+        // During active composition, suppress all intermediate data.
+        // The final text is sent directly from our compositionend handler.
+        if (isComposing) {
           return;
         }
+
+        // Track IME inline-replacement pattern: DEL(s) followed by replacement text.
+        // macOS Vietnamese IME sends DEL+replacement via keyboard but the replacement
+        // is often incomplete (missing consonants after the replaced vowel).
+        const charCode = data.length === 1 ? data.charCodeAt(0) : -1;
+        const isDel = charCode === 0x7f || charCode === 0x08;
+        if (isDel) {
+          imeDelCount++;
+          imeActive = true;
+          imeReplacementSent = "";
+        } else if (imeActive && data.length > 0 && imeReplacementSent === "") {
+          // First non-DEL text after DEL sequence = the replacement sent by IME
+          imeReplacementSent = data;
+        } else {
+          // Normal character or second non-DEL after replacement — reset tracking
+          imeActive = false;
+          imeDelCount = 0;
+          imeReplacementSent = "";
+        }
+
         writeStdin(sessionId, data).catch(console.error);
       });
 
@@ -497,6 +620,26 @@ export const TerminalView = memo(function TerminalView({
 
       // Handle special keyboard shortcuts
       term.attachCustomKeyEventHandler((event) => {
+        // ── IME keyCode 229 interception (for IMEs that use composition) ──
+        // This runs INSIDE xterm.js's _keyDown(), BEFORE CompositionHelper
+        // sees the event. Returning false prevents CompositionHelper.keydown()
+        // from dropping the keystroke via _isSendingComposition race.
+        // Note: macOS Vietnamese Telex does NOT use keyCode 229 — it uses
+        // inline DEL+replacement instead, handled by the imeActive tracking.
+        if (event.keyCode === 229 && event.type === "keydown") {
+          if (isComposing) return false;
+          const before = textarea.value;
+          setTimeout(() => {
+            if (isComposing) return;
+            const after = textarea.value;
+            if (after.length > before.length) {
+              writeStdin(sessionId, after.substring(before.length)).catch(console.error);
+            }
+            textarea.value = "";
+          }, 0);
+          return false;
+        }
+
         // Shift+Enter: send Kitty keyboard protocol sequence for Shift+Enter
         // so Claude Code inserts a newline in its input buffer instead of executing.
         // Raw "\n" would be treated as a command terminator by the CLI.
@@ -649,6 +792,7 @@ export const TerminalView = memo(function TerminalView({
     return () => {
       disposed = true;
       cancelPendingFlush();
+      cleanupTerminalReady(sessionId);
       if (activityWorkingTimer) clearTimeout(activityWorkingTimer);
       if (activityIdleTimer) clearTimeout(activityIdleTimer);
       // Flush remaining buffered output before disposal
@@ -657,11 +801,13 @@ export const TerminalView = memo(function TerminalView({
       }
       writeBuffer = [];
       resizeObserver?.disconnect();
+      compositionCleanup?.();
       if (pasteHandler) container.removeEventListener("paste", pasteHandler, { capture: true });
       if (unlistenDragDrop) unlistenDragDrop();
       dataDisposable?.dispose();
       resizeDisposable?.dispose();
       if (unlisten) unlisten();
+      unregisterFocus?.();
       term?.dispose();
       termRef.current = null;
       fitAddonRef.current = null;
@@ -678,7 +824,7 @@ export const TerminalView = memo(function TerminalView({
 
   return (
     <div
-      className={`terminal-cell flex h-full flex-col bg-maestro-bg ${cellStatusClass(effectiveStatus)} ${isFocused ? "terminal-cell-focused" : ""}`}
+      className={`terminal-cell flex h-full flex-col bg-maestro-bg `}
       onClick={onFocus}
     >
       {/* Rich header bar */}

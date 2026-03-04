@@ -10,8 +10,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useUpdateStore } from "@/stores/useUpdateStore";
 
-const cardClass =
-  "rounded-lg border border-maestro-border/60 bg-maestro-card p-3 shadow-[0_1px_4px_rgb(0_0_0/0.15),0_0_0_1px_rgb(255_255_255/0.03)_inset] transition-shadow hover:shadow-[0_2px_8px_rgb(0_0_0/0.25),0_0_0_1px_rgb(255_255_255/0.05)_inset]";
+const cardClass = "sidebar-card";
 
 const INTERVAL_OPTIONS = [
   { label: "30 minutes", value: 30 },

@@ -39,7 +39,7 @@ export function FDADialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="relative mx-4 w-full max-w-md rounded-lg border border-maestro-border bg-maestro-card p-6 shadow-xl">
+      <div className="glass-panel relative mx-4 w-full max-w-md rounded-lg p-6">
         {/* Close button */}
         <button
           type="button"
@@ -63,7 +63,7 @@ export function FDADialog({
         {/* Description */}
         <div className="mb-6 space-y-3 text-sm text-maestro-muted">
           <p>
-            Maestro needs Full Disk Access to open{" "}
+            JSpace needs Full Disk Access to open{" "}
             <strong className="text-maestro-text">{folderName}</strong> because
             it's in a protected location.
           </p>
@@ -110,7 +110,7 @@ export function FDADialog({
         {/* Help text */}
         <p className="mt-4 text-xs text-maestro-muted/70">
           In System Settings, go to Privacy &amp; Security &rarr; Full Disk Access,
-          then enable Maestro.
+          then enable JSpace.
         </p>
       </div>
     </div>
