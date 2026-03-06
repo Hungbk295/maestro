@@ -435,11 +435,23 @@ export const TerminalView = memo(function TerminalView({
       let imeDelCount = 0;
       let imeReplacementSent = "";
       let imeActive = false;
+      // Set when compositionstart fires while DELs are already in flight (inline-replacement
+      // mode). We block isComposing so onData keeps processing the replacement character,
+      // and we skip compositionend's data to avoid double-sending.
+      let imeBlockedComposition = false;
 
       // Block compositionstart from xterm.js — prevent CompositionHelper
       // from activating at all (for IMEs that DO use composition events).
       const onCompositionStart = (e: Event) => {
         e.stopImmediatePropagation();
+        if (imeDelCount > 0) {
+          // DELs already sent via keyboard path — this is an inline-replacement IME
+          // (macOS Vietnamese Telex) that also fires composition events in some cases.
+          // Don't enter composition mode: let onData + onInput handle the replacement.
+          // Mark so compositionend knows to skip sending its (potentially wrong/empty) data.
+          imeBlockedComposition = true;
+          return;
+        }
         isComposing = true;
       };
 
@@ -452,6 +464,13 @@ export const TerminalView = memo(function TerminalView({
       // Send the composed text directly to PTY ourselves.
       const onCompositionEnd = (e: Event) => {
         e.stopImmediatePropagation();
+        if (imeBlockedComposition) {
+          // compositionstart was suppressed because DELs were already in flight.
+          // The keyboard path (onData + onInput) is handling the replacement — don't
+          // double-send whatever compositionend.data might contain (often empty/wrong).
+          imeBlockedComposition = false;
+          return;
+        }
         isComposing = false;
         const data = (e as CompositionEvent).data;
         if (data && data.length > 0) {
@@ -472,8 +491,12 @@ export const TerminalView = memo(function TerminalView({
 
         // Check for IME replacement discrepancy
         if (imeActive && inputEvent.inputType === "insertText" && inputEvent.data) {
-          const expected = inputEvent.data;
-          const sent = imeReplacementSent;
+          // Normalize to NFC to handle macOS/WebKit sometimes sending NFD-encoded
+          // Vietnamese characters (e.g. "ả" as U+0061+U+0309 instead of U+1EA3).
+          // A normalization mismatch would cause startsWith to return false and
+          // silently drop the missing consonant.
+          const expected = inputEvent.data.normalize("NFC");
+          const sent = imeReplacementSent.normalize("NFC");
           if (sent && expected.length > sent.length && expected.startsWith(sent)) {
             const missing = expected.slice(sent.length);
             console.log(`[IME] fix: sent="${sent}" expected="${expected}" missing="${missing}"`);
