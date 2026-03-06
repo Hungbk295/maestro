@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  Coffee,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -62,14 +63,13 @@ import { CollapsedRail } from "./CollapsedRail";
 
 type SidebarTab = "config" | "processes" | "claude-data"
 
-type AppTheme = "dark" | "light" | "catppuccin-mocha" | "catppuccin-pink";
+type AppTheme = "dark" | "light" | "catppuccin-pink";
 
 interface SidebarProps {
   collapsed?: boolean;
   onCollapse?: () => void;
   onExpand?: () => void;
   theme?: AppTheme;
-  onToggleTheme?: () => void;
   onSetTheme?: (theme: AppTheme) => void;
 }
 
@@ -107,7 +107,7 @@ const STATUS_LABEL: Record<BackendSessionStatus, string> = {
 /*  SIDEBAR ROOT                                                     */
 /* ================================================================ */
 
-export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme, onSetTheme }: SidebarProps) {
+export function Sidebar({ collapsed, onCollapse, onExpand, theme, onSetTheme }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("config");
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem("maestro-sidebar-width");
@@ -269,7 +269,7 @@ export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme,
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
             {activeTab === "config" ? (
-              <ConfigTab theme={theme} onToggleTheme={onToggleTheme} onSetTheme={onSetTheme} />
+              <ConfigTab theme={theme} onSetTheme={onSetTheme} />
             ) : activeTab === "processes" ? (
               <ProcessesTab />
             ) : (
@@ -336,11 +336,9 @@ function SectionHeader({
 
 function ConfigTab({
   theme,
-  onToggleTheme,
   onSetTheme,
 }: {
   theme?: AppTheme;
-  onToggleTheme?: () => void;
   onSetTheme?: (theme: AppTheme) => void;
 }) {
   return (
@@ -361,7 +359,7 @@ function ConfigTab({
       {/* {divider}
       <QuickActionsSection /> */}
       {divider}
-      <AppearanceSection theme={theme} onToggle={onToggleTheme} onSetTheme={onSetTheme} />
+      <AppearanceSection theme={theme} onSetTheme={onSetTheme} />
     </>
   );
 }
@@ -1604,42 +1602,31 @@ function QuickActionsSection() {
 const THEME_OPTIONS: {
   id: AppTheme;
   label: string;
-  swatch: string;
-  dot: string;
+  icon: "moon" | "sun" | "coffee";
 }[] = [
-  { id: "dark",             label: "Dark",      swatch: "#1a1a1e", dot: "#58a6ff" },
-  { id: "light",            label: "Light",     swatch: "#ebebf0", dot: "#8839ef" },
-  { id: "catppuccin-mocha", label: "Mocha",     swatch: "#1e1e2e", dot: "#cba6f7" },
-  { id: "catppuccin-pink",  label: "Pink",      swatch: "#1a1624", dot: "#f5c2e7" },
+  { id: "dark",            label: "Dark",  icon: "moon" },
+  { id: "light",           label: "Light", icon: "sun" },
+  { id: "catppuccin-pink", label: "Catt",  icon: "coffee" },
 ];
 
 function AppearanceSection({
   theme,
-  onToggle,
   onSetTheme,
 }: {
   theme?: AppTheme;
-  onToggle?: () => void;
   onSetTheme?: (theme: AppTheme) => void;
 }) {
-  const isDark = theme !== "light";
-  const [showThemePicker, setShowThemePicker] = useState(false);
   const [showTerminalSettings, setShowTerminalSettings] = useState(false);
   const [showCliSettings, setShowCliSettings] = useState(false);
   const [showMaestroSettings, setShowMaestroSettings] = useState(false);
-  const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Close picker on outside click
-  useEffect(() => {
-    if (!showThemePicker) return;
-    const handler = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowThemePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showThemePicker]);
+  const themeIcon = (icon: "moon" | "sun" | "coffee") => {
+    switch (icon) {
+      case "moon": return <Moon size={13} />;
+      case "sun": return <Sun size={13} />;
+      case "coffee": return <Coffee size={13} />;
+    }
+  };
 
   return (
     <>
@@ -1649,88 +1636,24 @@ function AppearanceSection({
           Settings
         </div>
 
-        {/* Quick dark/light toggle + theme picker */}
+        {/* Theme selector — 3 buttons */}
         <div className="mb-0.5 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => onSetTheme?.("dark")}
-            title="Dark"
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-              theme === "dark"
-                ? "bg-maestro-border/50 text-maestro-text"
-                : "text-maestro-muted hover:bg-maestro-border/30 hover:text-maestro-text"
-            }`}
-          >
-            <Moon size={13} />
-            <span>Dark</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetTheme?.("light")}
-            title="Light"
-            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
-              theme === "light"
-                ? "bg-maestro-border/50 text-maestro-text"
-                : "text-maestro-muted hover:bg-maestro-border/30 hover:text-maestro-text"
-            }`}
-          >
-            <Sun size={13} />
-            <span>Light</span>
-          </button>
-
-          {/* Theme picker popup trigger */}
-          <div className="relative" ref={pickerRef}>
+          {THEME_OPTIONS.map((opt) => (
             <button
+              key={opt.id}
               type="button"
-              onClick={() => setShowThemePicker((v) => !v)}
-              title="More themes"
-              className={`flex items-center justify-center rounded-md px-2 py-1.5 text-xs transition-colors ${
-                showThemePicker || (theme !== "dark" && theme !== "light")
+              onClick={() => onSetTheme?.(opt.id)}
+              title={opt.label}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                theme === opt.id
                   ? "bg-maestro-border/50 text-maestro-text"
                   : "text-maestro-muted hover:bg-maestro-border/30 hover:text-maestro-text"
               }`}
             >
-              <Sparkles size={13} />
+              {themeIcon(opt.icon)}
+              <span>{opt.label}</span>
             </button>
-
-            {showThemePicker && (
-              <div className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[160px] rounded-lg border border-maestro-border bg-maestro-card p-1.5 shadow-lg">
-                <div className="mb-1 px-1.5 text-[10px] font-semibold uppercase tracking-wider text-maestro-muted">
-                  Themes
-                </div>
-                {THEME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      onSetTheme?.(opt.id);
-                      setShowThemePicker(false);
-                    }}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                      theme === opt.id
-                        ? "bg-maestro-border/50 text-maestro-text"
-                        : "text-maestro-muted hover:bg-maestro-border/30 hover:text-maestro-text"
-                    }`}
-                  >
-                    {/* Color swatch */}
-                    <span
-                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-maestro-border/60"
-                      style={{ background: opt.swatch }}
-                    >
-                      <span
-                        className="block h-2 w-2 rounded-full"
-                        style={{ background: opt.dot }}
-                      />
-                    </span>
-                    <span>{opt.label}</span>
-                    {theme === opt.id && (
-                      <Check size={11} className="ml-auto text-maestro-accent" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          ))}
         </div>
 
         <button

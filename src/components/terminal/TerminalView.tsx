@@ -10,7 +10,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 
 import { QuickActionsManager } from "@/components/quickactions/QuickActionsManager";
-import { ActivityFeed } from "@/components/session/ActivityFeed";
+// import { ActivityFeed } from "@/components/session/ActivityFeed";
 import { isGitWorktree } from "@/lib/git";
 import { useSessionBranch } from "@/hooks/useSessionBranch";
 import { buildFontFamily } from "@/lib/fonts";
@@ -189,7 +189,8 @@ export const TerminalView = memo(function TerminalView({
 
   // Track app theme (dark/light) for terminal theming
   const [appTheme, setAppTheme] = useState<"dark" | "light">(() => {
-    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+    const t = document.documentElement.getAttribute("data-theme");
+    return t === "light" || t === "catppuccin-pink" ? "light" : "dark";
   });
 
   // Fetch backend info on mount (cached after first call)
@@ -205,7 +206,7 @@ export const TerminalView = memo(function TerminalView({
       for (const mutation of mutations) {
         if (mutation.attributeName === "data-theme") {
           const newTheme = document.documentElement.getAttribute("data-theme");
-          setAppTheme(newTheme === "light" ? "light" : "dark");
+          setAppTheme(newTheme === "light" || newTheme === "catppuccin-pink" ? "light" : "dark");
         }
       }
     });
@@ -348,7 +349,8 @@ export const TerminalView = memo(function TerminalView({
     const initTerminal = async () => {
       if (disposed) return;
 
-      const initialTheme = document.documentElement.getAttribute("data-theme") === "light" ? LIGHT_THEME : DEFAULT_THEME;
+      const dt = document.documentElement.getAttribute("data-theme");
+      const initialTheme = (dt === "light" || dt === "catppuccin-pink") ? LIGHT_THEME : DEFAULT_THEME;
       // Reduce scrollback on Linux where the DOM renderer is slow in WebKitGTK.
       // 10000 lines of scrollback with the DOM renderer causes severe lag.
       const isLinux = navigator.userAgent.toLowerCase().includes("linux");
@@ -857,7 +859,7 @@ export const TerminalView = memo(function TerminalView({
         >
           Terminal
         </button>
-        <button
+        {/* <button
           type="button"
           className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
             activeTab === "activity"
@@ -867,18 +869,18 @@ export const TerminalView = memo(function TerminalView({
           onClick={() => setActiveTab("activity")}
         >
           Activity
-        </button>
+        </button> */}
       </div>
 
       {/* xterm.js container - always mounted but hidden when activity tab is active */}
       <div ref={containerRef} className={`flex-1 overflow-hidden ${activeTab !== "terminal" ? "hidden" : ""}`} />
 
       {/* Activity feed - shown when activity tab is active */}
-      {activeTab === "activity" && (
+      {/* {activeTab === "activity" && (
         <div className="flex-1 overflow-hidden">
           <ActivityFeed sessionId={sessionId} maxHeight="100%" />
         </div>
-      )}
+      )} */}
 
       {/* Quick action pills - only show on terminal tab */}
       {activeTab === "terminal" && (
