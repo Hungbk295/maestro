@@ -38,10 +38,14 @@ import { Sidebar } from "./components/sidebar/Sidebar";
 
 const DEFAULT_SESSION_COUNT = 6;
 
-type Theme = "dark" | "light";
+type Theme = "dark" | "light" | "catppuccin-pink";
 
 function isValidTheme(value: string | null): value is Theme {
-  return value === "dark" || value === "light";
+  return (
+    value === "dark" ||
+    value === "light" ||
+    value === "catppuccin-pink"
+  );
 }
 
 function App() {
@@ -189,7 +193,8 @@ function App() {
     return () => clearInterval(interval);
   }, [autoCheckEnabled, checkIntervalMinutes, checkForUpdates]);
 
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+
+  const handleSetTheme = (t: Theme) => setTheme(t);
   const macTitleBarPadding = useMacTitleBarPadding();
   const activeTab = tabs.find((tab) => tab.active) ?? null;
   const activeProjectPath = activeTab?.projectPath;
@@ -310,7 +315,7 @@ function App() {
           onCollapse={() => setSidebarOpen(false)}
           onExpand={() => setSidebarOpen(true)}
           theme={theme}
-          onToggleTheme={toggleTheme}
+          onSetTheme={handleSetTheme}
         />
 
         {/* Right column: top bar + content + bottom bar */}

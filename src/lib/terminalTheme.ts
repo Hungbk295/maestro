@@ -79,6 +79,72 @@ export const DEFAULT_THEME: TerminalTheme = {
 };
 
 /**
+ * Catppuccin Mocha terminal theme.
+ * Uses official Catppuccin Mocha ANSI color mapping.
+ */
+export const CATPPUCCIN_MOCHA_THEME: TerminalTheme = {
+  background: "#1e1e2e",    // Base
+  foreground: "#cdd6f4",    // Text
+  cursor: "#f5e0dc",        // Rosewater
+  cursorAccent: "#1e1e2e",  // Base
+  selectionBackground: "#585b70", // Surface2
+  selectionForeground: undefined,
+
+  // Standard colors
+  black: "#45475a",    // Surface1
+  red: "#f38ba8",      // Red
+  green: "#a6e3a1",    // Green
+  yellow: "#f9e2af",   // Yellow
+  blue: "#89b4fa",     // Blue
+  magenta: "#f5c2e7",  // Pink
+  cyan: "#94e2d5",     // Teal
+  white: "#bac2de",    // Subtext1
+
+  // Bright colors
+  brightBlack: "#585b70",   // Surface2
+  brightRed: "#f38ba8",     // Red
+  brightGreen: "#a6e3a1",   // Green
+  brightYellow: "#f9e2af",  // Yellow
+  brightBlue: "#89b4fa",    // Blue
+  brightMagenta: "#f5c2e7", // Pink
+  brightCyan: "#94e2d5",    // Teal
+  brightWhite: "#a6adc8",   // Subtext0
+};
+
+/**
+ * Catppuccin Latte terminal theme (for catppuccin-pink).
+ * Warm white bg, dark text, official Latte ANSI palette.
+ */
+export const CATPPUCCIN_LATTE_THEME: TerminalTheme = {
+  background: "#fffcfa",    // warm white (matches catppuccin-pink card)
+  foreground: "#4c4f69",    // Latte Text
+  cursor: "#dc8a78",        // Rosewater
+  cursorAccent: "#fffcfa",
+  selectionBackground: "#acb0be", // Surface2
+  selectionForeground: undefined,
+
+  // Standard colors — official Catppuccin Latte
+  black: "#5c5f77",    // Subtext1
+  red: "#d20f39",
+  green: "#40a02b",
+  yellow: "#df8e1d",
+  blue: "#1e66f5",
+  magenta: "#ea76cb",  // Pink
+  cyan: "#179299",     // Teal
+  white: "#acb0be",    // Surface2
+
+  // Bright colors
+  brightBlack: "#6c6f85",   // Overlay0
+  brightRed: "#d20f39",
+  brightGreen: "#40a02b",
+  brightYellow: "#df8e1d",
+  brightBlue: "#1e66f5",
+  brightMagenta: "#ea76cb",
+  brightCyan: "#179299",
+  brightWhite: "#bcc0cc",   // Surface0
+};
+
+/**
  * Light terminal theme (GitHub Light inspired).
  */
 export const LIGHT_THEME: TerminalTheme = {
