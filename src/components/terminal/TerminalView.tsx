@@ -15,7 +15,7 @@ import { isGitWorktree } from "@/lib/git";
 import { useSessionBranch } from "@/hooks/useSessionBranch";
 import { buildFontFamily } from "@/lib/fonts";
 import { cleanupTerminalReady, getBackendInfo, killSession, onPtyOutput, registerTerminalFocusCallback, resizePty, savePastedImage, signalTerminalReady, writeStdin, type BackendInfo } from "@/lib/terminal";
-import { DEFAULT_THEME, LIGHT_THEME, toXtermTheme } from "@/lib/terminalTheme";
+import { CATPPUCCIN_LATTE_THEME, CATPPUCCIN_MOCHA_THEME, DEFAULT_THEME, LIGHT_THEME, toXtermTheme } from "@/lib/terminalTheme";
 import { useMcpStore } from "@/stores/useMcpStore";
 import { useCloseConfirmStore } from "@/stores/useCloseConfirmStore";
 import { type AiMode, type BackendSessionStatus, useSessionStore } from "@/stores/useSessionStore";
@@ -188,9 +188,11 @@ export const TerminalView = memo(function TerminalView({
   const [_backendInfo, setBackendInfo] = useState<BackendInfo | null>(null);
 
   // Track app theme (dark/light) for terminal theming
-  const [appTheme, setAppTheme] = useState<"dark" | "light">(() => {
+  const [appTheme, setAppTheme] = useState<"dark" | "light" | "catppuccin-mocha" | "catppuccin-pink">(() => {
     const t = document.documentElement.getAttribute("data-theme");
-    return t === "light" || t === "catppuccin-pink" ? "light" : "dark";
+    return t === "catppuccin-mocha" ? "catppuccin-mocha"
+      : t === "catppuccin-pink" ? "catppuccin-pink"
+      : t === "light" ? "light" : "dark";
   });
 
   // Fetch backend info on mount (cached after first call)
@@ -206,7 +208,9 @@ export const TerminalView = memo(function TerminalView({
       for (const mutation of mutations) {
         if (mutation.attributeName === "data-theme") {
           const newTheme = document.documentElement.getAttribute("data-theme");
-          setAppTheme(newTheme === "light" || newTheme === "catppuccin-pink" ? "light" : "dark");
+          setAppTheme(newTheme === "catppuccin-mocha" ? "catppuccin-mocha"
+            : newTheme === "catppuccin-pink" ? "catppuccin-pink"
+            : newTheme === "light" ? "light" : "dark");
         }
       }
     });
@@ -218,7 +222,10 @@ export const TerminalView = memo(function TerminalView({
   // Update terminal theme when appTheme changes
   useEffect(() => {
     if (termRef.current) {
-      const theme = appTheme === "light" ? LIGHT_THEME : DEFAULT_THEME;
+      const theme = appTheme === "catppuccin-pink" ? CATPPUCCIN_LATTE_THEME
+        : appTheme === "catppuccin-mocha" ? CATPPUCCIN_MOCHA_THEME
+        : appTheme === "light" ? LIGHT_THEME
+        : DEFAULT_THEME;
       termRef.current.options.theme = toXtermTheme(theme);
     }
   }, [appTheme]);
@@ -350,7 +357,10 @@ export const TerminalView = memo(function TerminalView({
       if (disposed) return;
 
       const dt = document.documentElement.getAttribute("data-theme");
-      const initialTheme = (dt === "light" || dt === "catppuccin-pink") ? LIGHT_THEME : DEFAULT_THEME;
+      const initialTheme = dt === "catppuccin-pink" ? CATPPUCCIN_LATTE_THEME
+        : dt === "catppuccin-mocha" ? CATPPUCCIN_MOCHA_THEME
+        : dt === "light" ? LIGHT_THEME
+        : DEFAULT_THEME;
       // Reduce scrollback on Linux where the DOM renderer is slow in WebKitGTK.
       // 10000 lines of scrollback with the DOM renderer causes severe lag.
       const isLinux = navigator.userAgent.toLowerCase().includes("linux");
