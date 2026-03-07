@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  Coffee,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -62,12 +63,14 @@ import { CollapsedRail } from "./CollapsedRail";
 
 type SidebarTab = "config" | "processes" | "claude-data"
 
+type AppTheme = "dark" | "light" | "catppuccin-pink";
+
 interface SidebarProps {
   collapsed?: boolean;
   onCollapse?: () => void;
   onExpand?: () => void;
-  theme?: "dark" | "light";
-  onToggleTheme?: () => void;
+  theme?: AppTheme;
+  onSetTheme?: (theme: AppTheme) => void;
 }
 
 /* ── Shared card class ── */
@@ -104,7 +107,7 @@ const STATUS_LABEL: Record<BackendSessionStatus, string> = {
 /*  SIDEBAR ROOT                                                     */
 /* ================================================================ */
 
-export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme }: SidebarProps) {
+export function Sidebar({ collapsed, onCollapse, onExpand, theme, onSetTheme }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>("config");
   const [width, setWidth] = useState(() => {
     const stored = localStorage.getItem("maestro-sidebar-width");
@@ -266,7 +269,7 @@ export function Sidebar({ collapsed, onCollapse, onExpand, theme, onToggleTheme 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
             {activeTab === "config" ? (
-              <ConfigTab theme={theme} onToggleTheme={onToggleTheme} />
+              <ConfigTab theme={theme} onSetTheme={onSetTheme} />
             ) : activeTab === "processes" ? (
               <ProcessesTab />
             ) : (
@@ -333,10 +336,10 @@ function SectionHeader({
 
 function ConfigTab({
   theme,
-  onToggleTheme,
+  onSetTheme,
 }: {
-  theme?: "dark" | "light";
-  onToggleTheme?: () => void;
+  theme?: AppTheme;
+  onSetTheme?: (theme: AppTheme) => void;
 }) {
   return (
     <>
@@ -356,7 +359,7 @@ function ConfigTab({
       {/* {divider}
       <QuickActionsSection /> */}
       {divider}
-      <AppearanceSection theme={theme} onToggle={onToggleTheme} />
+      <AppearanceSection theme={theme} onSetTheme={onSetTheme} />
     </>
   );
 }
@@ -1596,17 +1599,35 @@ function QuickActionsSection() {
 
 /* ── 9. Settings ── */
 
+const THEME_OPTIONS: {
+  id: AppTheme;
+  label: string;
+  icon: "moon" | "sun" | "coffee";
+}[] = [
+  { id: "dark",            label: "Dark",  icon: "moon" },
+  { id: "light",           label: "Light", icon: "sun" },
+  { id: "catppuccin-pink", label: "Catt",  icon: "coffee" },
+];
+
 function AppearanceSection({
   theme,
-  onToggle,
+  onSetTheme,
 }: {
-  theme?: "dark" | "light";
-  onToggle?: () => void;
+  theme?: AppTheme;
+  onSetTheme?: (theme: AppTheme) => void;
 }) {
-  const isDark = theme !== "light";
   const [showTerminalSettings, setShowTerminalSettings] = useState(false);
   const [showCliSettings, setShowCliSettings] = useState(false);
   const [showMaestroSettings, setShowMaestroSettings] = useState(false);
+
+  const themeIcon = (icon: "moon" | "sun" | "coffee") => {
+    switch (icon) {
+      case "moon": return <Moon size={13} />;
+      case "sun": return <Sun size={13} />;
+      case "coffee": return <Coffee size={13} />;
+    }
+  };
+
   return (
     <>
       <div className={cardClass}>
@@ -1614,18 +1635,27 @@ function AppearanceSection({
           <Settings size={13} />
           Settings
         </div>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-xs text-maestro-text transition-colors hover:bg-maestro-border/40"
-        >
-          {isDark ? (
-            <Sun size={14} className="text-maestro-orange" />
-          ) : (
-            <Moon size={14} className="text-maestro-accent" />
-          )}
-          <span>{isDark ? "Switch to Light" : "Switch to Dark"}</span>
-        </button>
+
+        {/* Theme selector — 3 buttons */}
+        <div className="mb-0.5 flex items-center gap-1">
+          {THEME_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onSetTheme?.(opt.id)}
+              title={opt.label}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                theme === opt.id
+                  ? "bg-maestro-border/50 text-maestro-text"
+                  : "text-maestro-muted hover:bg-maestro-border/30 hover:text-maestro-text"
+              }`}
+            >
+              {themeIcon(opt.icon)}
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={() => setShowTerminalSettings(true)}
