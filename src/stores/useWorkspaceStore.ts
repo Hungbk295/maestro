@@ -35,6 +35,17 @@ export interface RepositoryInfo {
  * @property selectedRepoPath - Currently selected repository path for git operations.
  * @property worktreeBasePath - Custom worktree base directory for this project (null = use default).
  */
+/** Allowed tab accent colors for the right-click color picker. */
+export type TabColor =
+  | "default"
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink";
+
 export type WorkspaceTab = {
   id: string;
   name: string;
@@ -46,6 +57,7 @@ export type WorkspaceTab = {
   repositories: RepositoryInfo[];
   selectedRepoPath: string | null;
   worktreeBasePath: string | null;
+  tabColor: TabColor;
 };
 
 /** Read-only slice of the workspace store; persisted to disk via Zustand `persist`. */
@@ -72,6 +84,8 @@ type WorkspaceActions = {
   updateRepositories: (tabId: string, repositories: RepositoryInfo[]) => void;
   /** Set or clear a custom worktree base path for a project tab. */
   setWorktreeBasePath: (tabId: string, path: string | null) => void;
+  /** Set the accent color for a tab. */
+  setTabColor: (tabId: string, color: TabColor) => void;
   /** Reorder tabs by moving activeId to overId's position. Used by drag-and-drop. */
   reorderTabs: (activeId: string, overId: string) => void;
   /** Move a tab one position left or right. Used by keyboard shortcut. */
@@ -205,6 +219,7 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
               repositories,
               selectedRepoPath,
               worktreeBasePath: null,
+              tabColor: "default",
             },
           ],
         });
@@ -316,6 +331,14 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
         });
       },
 
+      setTabColor: (tabId: string, color: TabColor) => {
+        set({
+          tabs: get().tabs.map((t) =>
+            t.id === tabId ? { ...t, tabColor: color } : t
+          ),
+        });
+      },
+
       reorderTabs: (activeId: string, overId: string) => {
         if (activeId === overId) return;
         const { tabs } = get();
@@ -338,7 +361,7 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
       name: "maestro-workspace",
       storage: createJSONStorage(() => tauriStorage),
       partialize: (state) => ({ tabs: state.tabs }),
-      version: 4,
+      version: 5,
       onRehydrateStorage: () => {
         return (state) => {
           if (state) {
@@ -381,6 +404,14 @@ export const useWorkspaceStore = create<WorkspaceState & WorkspaceActions>()(
           tabs = tabs.map((t) => ({
             ...t,
             worktreeBasePath: t.worktreeBasePath ?? null,
+          }));
+        }
+
+        // v4 -> v5: Add tabColor
+        if (version < 5) {
+          tabs = tabs.map((t) => ({
+            ...t,
+            tabColor: t.tabColor ?? "default",
           }));
         }
 

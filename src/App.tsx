@@ -54,6 +54,7 @@ function App() {
   const closeTab = useWorkspaceStore((s) => s.closeTab);
   const reorderTabs = useWorkspaceStore((s) => s.reorderTabs);
   const moveTab = useWorkspaceStore((s) => s.moveTab);
+  const setTabColor = useWorkspaceStore((s) => s.setTabColor);
   const setSessionsLaunched = useWorkspaceStore((s) => s.setSessionsLaunched);
   const fetchSessions = useSessionStore((s) => s.fetchSessions);
   const initListeners = useSessionStore((s) => s.initListeners);
@@ -297,7 +298,7 @@ function App() {
     >
       {/* Project tabs — full width at top (with window controls) */}
       <ProjectTabs
-        tabs={tabs.map((t) => ({ id: t.id, name: t.name, active: t.active }))}
+        tabs={tabs.map((t) => ({ id: t.id, name: t.name, active: t.active, tabColor: t.tabColor }))}
         onSelectTab={selectTab}
         onCloseTab={handleCloseTab}
         onNewTab={handleOpenProject}
@@ -305,6 +306,7 @@ function App() {
         sidebarOpen={sidebarOpen}
         onReorderTab={reorderTabs}
         onMoveTab={moveTab}
+        onSetTabColor={setTabColor}
       />
 
       {/* Main area: sidebar + content */}
