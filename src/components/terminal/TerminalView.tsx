@@ -300,6 +300,12 @@ export const TerminalView = memo(function TerminalView({
     let writeBuffer: string[] = [];
     let rafId: number | null = null;
     let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+    // Defer PTY output flushing while IME inline-replacement is in progress.
+    // This prevents Claude Code's TUI re-renders from showing intermediate
+    // states (e.g. "viế" flash before the full "viết" arrives).
+    let imeFlushDeferred = false;
+    let imeTimeout: ReturnType<typeof setTimeout> | null = null;
+    const IME_SAFETY_TIMEOUT_MS = 30;
 
     // === Activity-based status detection ===
     let activityWorkingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -336,6 +342,7 @@ export const TerminalView = memo(function TerminalView({
     };
 
     const scheduleFlush = () => {
+      if (imeFlushDeferred) return;  // Defer output during IME replacement
       if (rafId !== null) return;  // Already scheduled
       rafId = requestAnimationFrame(flushBuffer);
       if (fallbackTimerId === null) {
@@ -452,6 +459,16 @@ export const TerminalView = memo(function TerminalView({
       // and we skip compositionend's data to avoid double-sending.
       let imeBlockedComposition = false;
 
+      const imeReset = () => {
+        imeActive = false;
+        imeDelCount = 0;
+        imeReplacementSent = "";
+        imeBlockedComposition = false;
+        imeFlushDeferred = false;
+        if (imeTimeout) { clearTimeout(imeTimeout); imeTimeout = null; }
+        scheduleFlush();
+      };
+
       // Block compositionstart from xterm.js — prevent CompositionHelper
       // from activating at all (for IMEs that DO use composition events).
       const onCompositionStart = (e: Event) => {
@@ -511,16 +528,12 @@ export const TerminalView = memo(function TerminalView({
           const sent = imeReplacementSent.normalize("NFC");
           if (sent && expected.length > sent.length && expected.startsWith(sent)) {
             const missing = expected.slice(sent.length);
-            console.log(`[IME] fix: sent="${sent}" expected="${expected}" missing="${missing}"`);
             writeStdin(sessionId, missing).catch(console.error);
           } else if (!sent && expected.length > 0) {
             // DELs sent but no replacement via keyboard — send full text
-            console.log(`[IME] fix: no replacement sent, sending full="${expected}"`);
             writeStdin(sessionId, expected).catch(console.error);
           }
-          imeActive = false;
-          imeDelCount = 0;
-          imeReplacementSent = "";
+          imeReset();
         }
       };
 
@@ -630,8 +643,15 @@ export const TerminalView = memo(function TerminalView({
         // Track IME inline-replacement pattern: DEL(s) followed by replacement text.
         // macOS Vietnamese IME sends DEL+replacement via keyboard but the replacement
         // is often incomplete (missing consonants after the replaced vowel).
-        const charCode = data.length === 1 ? data.charCodeAt(0) : -1;
-        const isDel = charCode === 0x7f || charCode === 0x08;
+        // Handle multi-character strings: DELs and replacement may arrive in one chunk
+        // (e.g. "\x7f\x7fế" = 2 DELs + replacement "ế").
+        let leadingDels = 0;
+        for (let i = 0; i < data.length; i++) {
+          const ch = data.charCodeAt(i);
+          if (ch === 0x7f || ch === 0x08) leadingDels++;
+          else break;
+        }
+        const hasDels = leadingDels > 0;
         // Escape sequences are terminal responses to process queries (e.g. cursor
         // position reports \x1b[row;colR sent by xterm.js in reply to \x1b[6n).
         // They must not reset IME state — doing so causes a race condition where
@@ -639,20 +659,25 @@ export const TerminalView = memo(function TerminalView({
         // DEL+replacement onData events and the browser input event, breaking the
         // inline-replacement tracking and dropping final consonants ("viết" → "viế").
         const isEscape = data.charCodeAt(0) === 0x1b;
-        if (isDel) {
-          imeDelCount++;
+        if (hasDels) {
+          imeDelCount += leadingDels;
           imeActive = true;
-          imeReplacementSent = "";
+          imeFlushDeferred = true;
+          // Capture replacement text that follows the DELs in the same chunk
+          const trailing = data.slice(leadingDels);
+          if (trailing.length > 0) {
+            imeReplacementSent = trailing;
+          } else {
+            imeReplacementSent = "";
+          }
+          // Safety timeout: if onInput doesn't fire within the window, reset and flush
+          if (imeTimeout) clearTimeout(imeTimeout);
+          imeTimeout = setTimeout(imeReset, IME_SAFETY_TIMEOUT_MS);
         } else if (isEscape) {
           // Terminal response sequence — pass through without touching IME state
-        } else if (imeActive && data.length > 0 && imeReplacementSent === "") {
-          // First non-DEL text after DEL sequence = the replacement sent by IME
-          imeReplacementSent = data;
-        } else {
-          // Normal character or second non-DEL after replacement — reset tracking
-          imeActive = false;
-          imeDelCount = 0;
-          imeReplacementSent = "";
+        } else if (imeActive) {
+          // Accumulate replacement text (may arrive in multiple onData chunks)
+          imeReplacementSent += data;
         }
 
         writeStdin(sessionId, data).catch(console.error);
@@ -837,6 +862,7 @@ export const TerminalView = memo(function TerminalView({
       disposed = true;
       cancelPendingFlush();
       cleanupTerminalReady(sessionId);
+      if (imeTimeout) clearTimeout(imeTimeout);
       if (activityWorkingTimer) clearTimeout(activityWorkingTimer);
       if (activityIdleTimer) clearTimeout(activityIdleTimer);
       // Flush remaining buffered output before disposal
